@@ -5,6 +5,7 @@ import {
   getFirstParagraphFromHTML,
   getURLsFromHTML,
   getImagesFromHTML,
+  extractPageData,
 } from "./crawl";
 
 describe("normalizeURL", () => {
@@ -166,5 +167,68 @@ describe("getImagesFromHTML", () => {
     const expected: string[] = [];
 
     expect(actual).toEqual(expected);
+  });
+});
+
+describe("extractPageData", () => {
+  it("extracts basic page data", () => {
+    const inputURL = "https://crawler-test.com";
+    const inputBody = `
+      <html><body>
+        <h1>Test Title</h1>
+        <p>This is the first paragraph.</p>
+        <a href="/link1">Link 1</a>
+        <img src="/image1.jpg" alt="Image 1">
+      </body></html>
+    `;
+
+    const actual = extractPageData(inputBody, inputURL);
+    const expected = {
+      url: "https://crawler-test.com",
+      heading: "Test Title",
+      first_paragraph: "This is the first paragraph.",
+      outgoing_links: ["https://crawler-test.com/link1"],
+      image_urls: ["https://crawler-test.com/image1.jpg"],
+    };
+
+    expect(actual).toEqual(expected);
+  });
+
+  it("prefers the first paragraph inside main", () => {
+    const inputURL = "https://crawler-test.com/blog";
+    const inputBody = `
+      <html><body>
+        <h2>Blog Post</h2>
+        <p>Intro outside main.</p>
+        <main>
+          <p>Main paragraph.</p>
+          <p>Another paragraph.</p>
+        </main>
+        <a href="https://example.com/about">About</a>
+        <img src="hero.png" alt="Hero image">
+      </body></html>
+    `;
+
+    expect(extractPageData(inputBody, inputURL)).toEqual({
+      url: "https://crawler-test.com/blog",
+      heading: "Blog Post",
+      first_paragraph: "Main paragraph.",
+      outgoing_links: ["https://example.com/about"],
+      image_urls: ["https://crawler-test.com/hero.png"],
+    });
+  });
+
+  it("returns empty values when elements are missing", () => {
+    const inputURL = "https://crawler-test.com/empty";
+    const inputBody =
+      "<html><body><div>No extractable content</div></body></html>";
+
+    expect(extractPageData(inputBody, inputURL)).toEqual({
+      url: "https://crawler-test.com/empty",
+      heading: "",
+      first_paragraph: "",
+      outgoing_links: [],
+      image_urls: [],
+    });
   });
 });
