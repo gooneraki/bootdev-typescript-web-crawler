@@ -108,32 +108,68 @@ export function extractPageData(
   };
 }
 
-export async function getHTML(url: string) {
+export async function getHTML(url: string): Promise<string | undefined> {
+  let response: Response;
   try {
-    const response = await fetch(url, {
+    response = await fetch(url, {
       headers: {
         "User-Agent": "BootCrawler/1.0",
       },
     });
-
-    if (response.status >= 400) {
-      console.error(
-        `failed to fetch ${url}: ${response.status} ${response.statusText}`,
-      );
-      return;
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("text/html")) {
-      console.error(
-        `failed to fetch ${url}: non-html content-type '${contentType ?? "unknown"}'`,
-      );
-      return;
-    }
-
-    const htmlBody = await response.text();
-    console.log(htmlBody);
   } catch (error) {
-    console.error(`failed to fetch ${url}:`, error);
+    throw new Error(`network error: ${(error as Error).message}`);
   }
+
+  if (response.status >= 400) {
+    console.log(`got HTTP error: ${response.status} ${response.statusText}`);
+    return;
+  }
+
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !contentType.includes("text/html")) {
+    console.log(`got non-HTML response: ${contentType}`);
+    return;
+  }
+
+  return response.text();
+}
+
+export async function crawlPage(
+  baseURL: string,
+  currentURL: string = baseURL,
+  pages: Record<string, number> = {},
+): Promise<Record<string, number>> {
+  const base = new URL(baseURL);
+  const current = new URL(currentURL);
+
+  if (base.hostname !== current.hostname) {
+    return pages;
+  }
+
+  const normalizedCurrentURL = normalizeURL(currentURL);
+  if (pages[normalizedCurrentURL]) {
+    pages[normalizedCurrentURL] += 1;
+    return pages;
+  }
+
+  pages[normalizedCurrentURL] = 1;
+  console.log(`actively crawling: ${currentURL}`);
+
+  let htmlBody: string | undefined;
+  try {
+    htmlBody = await getHTML(currentURL);
+  } catch (error) {
+    console.log(`${(error as Error).message}`);
+    return pages;
+  }
+  if (!htmlBody) {
+    return pages;
+  }
+
+  const nextURLs = getURLsFromHTML(htmlBody, currentURL);
+  for (const nextURL of nextURLs) {
+    pages = await crawlPage(baseURL, nextURL, pages);
+  }
+
+  return pages;
 }
