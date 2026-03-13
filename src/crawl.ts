@@ -107,3 +107,33 @@ export function extractPageData(
     image_urls: getImagesFromHTML(html, pageURL),
   };
 }
+
+export async function getHTML(url: string) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "BootCrawler/1.0",
+      },
+    });
+
+    if (response.status >= 400) {
+      console.error(
+        `failed to fetch ${url}: ${response.status} ${response.statusText}`,
+      );
+      return;
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("text/html")) {
+      console.error(
+        `failed to fetch ${url}: non-html content-type '${contentType ?? "unknown"}'`,
+      );
+      return;
+    }
+
+    const htmlBody = await response.text();
+    console.log(htmlBody);
+  } catch (error) {
+    console.error(`failed to fetch ${url}:`, error);
+  }
+}
