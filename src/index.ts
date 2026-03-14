@@ -32,6 +32,13 @@ async function main() {
 
   const pages = await crawlSiteAsync(baseURL, maxConcurrency, maxPages);
 
+  const sortedPages = Object.entries(pages).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  for (const [url, data] of sortedPages) {
+    console.log(`Page: ${url} | heading: ${data.heading}`);
+  }
+
   console.log("Finished crawling.");
   const firstPage = Object.values(pages)[0];
   if (firstPage) {
