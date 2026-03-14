@@ -1,4 +1,5 @@
 import { JSDOM } from "jsdom";
+import pLimit from "p-limit";
 
 export type ExtractedPageData = {
   url: string;
@@ -108,7 +109,7 @@ export function extractPageData(
   };
 }
 
-export async function getHTML(url: string): Promise<string | undefined> {
+export async function getHTML(url: string): Promise<string> {
   console.log(`crawling ${url}`);
 
   let response: Response;
@@ -124,13 +125,13 @@ export async function getHTML(url: string): Promise<string | undefined> {
 
   if (response.status > 399) {
     console.log(`Got HTTP error: ${response.status} ${response.statusText}`);
-    return;
+    return "";
   }
 
   const contentType = response.headers.get("content-type");
   if (!contentType || !contentType.includes("text/html")) {
     console.log(`Got non-HTML response: ${contentType}`);
-    return;
+    return "";
   }
 
   return response.text();
@@ -172,4 +173,93 @@ export async function crawlPage(
   }
 
   return pages;
+}
+
+class ConcurrentCrawler {
+  private baseURL: string;
+  private pages: Record<string, number>;
+  private limit: ReturnType<typeof pLimit>;
+
+  constructor(baseURL: string, maxConcurrency: number = 5) {
+    this.baseURL = baseURL;
+    this.pages = {};
+    this.limit = pLimit(maxConcurrency);
+  }
+
+  private addPageVisit(normalizedURL: string): boolean {
+    if (this.pages[normalizedURL]) {
+      this.pages[normalizedURL]++;
+      return false;
+    }
+
+    this.pages[normalizedURL] = 1;
+    return true;
+  }
+
+  private async getHTML(currentURL: string): Promise<string> {
+    return await this.limit(async () => {
+      let response: Response;
+      try {
+        response = await fetch(currentURL, {
+          headers: { "User-Agent": "BootCrawler/1.0" },
+        });
+      } catch (error) {
+        throw new Error(`Got Network error: ${(error as Error).message}`);
+      }
+
+      if (response.status > 399) {
+        throw new Error(
+          `Got HTTP error: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("text/html")) {
+        throw new Error(`Got non-HTML response: ${contentType}`);
+      }
+
+      return response.text();
+    });
+  }
+
+  private async crawlPage(currentURL: string): Promise<void> {
+    const currentURLObj = new URL(currentURL);
+    const baseURLObj = new URL(this.baseURL);
+    if (currentURLObj.hostname !== baseURLObj.hostname) {
+      return;
+    }
+
+    const normalizedURL = normalizeURL(currentURL);
+    if (!this.addPageVisit(normalizedURL)) {
+      return;
+    }
+
+    console.log(`crawling ${currentURL}`);
+
+    let html = "";
+    try {
+      html = await this.getHTML(currentURL);
+    } catch (error) {
+      console.log(`${(error as Error).message}`);
+      return;
+    }
+
+    const nextURLs = getURLsFromHTML(html, this.baseURL);
+    const crawlPromises = nextURLs.map((nextURL) => this.crawlPage(nextURL));
+
+    await Promise.all(crawlPromises);
+  }
+
+  async crawl(): Promise<Record<string, number>> {
+    await this.crawlPage(this.baseURL);
+    return this.pages;
+  }
+}
+
+export async function crawlSiteAsync(
+  baseURL: string,
+  maxConcurrency: number = 5,
+): Promise<Record<string, number>> {
+  const crawler = new ConcurrentCrawler(baseURL, maxConcurrency);
+  return await crawler.crawl();
 }
