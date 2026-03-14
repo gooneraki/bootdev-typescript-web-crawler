@@ -109,6 +109,8 @@ export function extractPageData(
 }
 
 export async function getHTML(url: string): Promise<string | undefined> {
+  console.log(`crawling ${url}`);
+
   let response: Response;
   try {
     response = await fetch(url, {
@@ -117,17 +119,17 @@ export async function getHTML(url: string): Promise<string | undefined> {
       },
     });
   } catch (error) {
-    throw new Error(`network error: ${(error as Error).message}`);
+    throw new Error(`Got Network error: ${(error as Error).message}`);
   }
 
-  if (response.status >= 400) {
-    console.log(`got HTTP error: ${response.status} ${response.statusText}`);
+  if (response.status > 399) {
+    console.log(`Got HTTP error: ${response.status} ${response.statusText}`);
     return;
   }
 
   const contentType = response.headers.get("content-type");
   if (!contentType || !contentType.includes("text/html")) {
-    console.log(`got non-HTML response: ${contentType}`);
+    console.log(`Got non-HTML response: ${contentType}`);
     return;
   }
 
@@ -139,34 +141,32 @@ export async function crawlPage(
   currentURL: string = baseURL,
   pages: Record<string, number> = {},
 ): Promise<Record<string, number>> {
-  const base = new URL(baseURL);
-  const current = new URL(currentURL);
-
-  if (base.hostname !== current.hostname) {
+  const currentURLObj = new URL(currentURL);
+  const baseURLObj = new URL(baseURL);
+  if (currentURLObj.hostname !== baseURLObj.hostname) {
     return pages;
   }
 
-  const normalizedCurrentURL = normalizeURL(currentURL);
-  if (pages[normalizedCurrentURL]) {
-    pages[normalizedCurrentURL] += 1;
+  const normalizedURL = normalizeURL(currentURL);
+
+  if (pages[normalizedURL] > 0) {
+    pages[normalizedURL]++;
     return pages;
   }
 
-  pages[normalizedCurrentURL] = 1;
-  console.log(`actively crawling: ${currentURL}`);
+  pages[normalizedURL] = 1;
 
-  let htmlBody: string | undefined;
+  console.log(`crawling ${currentURL}`);
+
+  let html = "";
   try {
-    htmlBody = await getHTML(currentURL);
+    html = (await getHTML(currentURL)) ?? "";
   } catch (error) {
     console.log(`${(error as Error).message}`);
     return pages;
   }
-  if (!htmlBody) {
-    return pages;
-  }
 
-  const nextURLs = getURLsFromHTML(htmlBody, currentURL);
+  const nextURLs = getURLsFromHTML(html, baseURL);
   for (const nextURL of nextURLs) {
     pages = await crawlPage(baseURL, nextURL, pages);
   }
